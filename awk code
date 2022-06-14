@@ -1,0 +1,153 @@
+#Add sample name to fasta header
+
+for i in *.fasta ; do awk -v OFS="\n" '/^>/ {getline seq} {print $0"/"FILENAME,seq}' $i > ${i%%.*}"_relabel.fa" ;done
+# Convert a multi-line fasta to a singleline fasta
+	awk '!/^>/ { printf "%s", $0; n = "\n" } /^>/ { print n $0; n = "" } END { printf "%s", n }' sample1.fa > sample1_singleline.fa
+
+#Convert from a two column text tab-delimited file (ID and sequence) to a fasta file
+	awk -vOFS='' '{print ">",$1,"\n",$2,"\n";}' two_column_sample_tab.txt > sample1.fa
+
+# Handy AWK tricks - comments start at the left margin, commands are indented five spaces
+
+# To pass a shell variable to awk, use the -v option to awk and define the awk variable:
+    root="/webroot"; echo | awk -v r=$root '{ print "shell root value - " r}'  
+    
+# The leading 'echo | ' just opens a pipe to awk to demonstrate the variable assignment works
+
+# Using awk, sort & uniq to look at the first 15 bases of reads to see which barcodes are present in a FASTQ file:
+     zcat sequence_r1.fq.gz | awk '{if(NR%4==2) {print substr($0,1,15)}}' | sort | uniq -c | sort -nrk1,1 > first15mer.txt
+     
+# NOTE: awk substr() command uses 1-indexed positions; i.e. the first character in the string is 1, not 0.
+# The 'if(NR%4==2)' tests for sequence lines in FASTQ files, because the sequence is always the second 
+# line of each set of four lines. The 'print substr($0,1,15)' command prints the first 15 bases of each 
+# sequence to STDOUT, which is then piped to sort, followed by uniq -c to count the number of occurrences
+# of each sequence, followed again by a sort command but this time with options '-nrk1,1' which specify
+# sorting in reverse (-r) numerical (-n) order,  basing the sort on keys (-k) beginning with field 1 and
+# ending with field 1 (1,1).
+
+# Using awk, sort & uniq to look at index sequences in FASTQ header lines:
+     zcat sequence_r1.fq.gz | awk '{if(NR%4==1) {print substr($0,(index($0,"#")+1),6)}}' | sort | uniq -c | sort -nrk1,1 > r1indexes.txt
+# The 'index($0,"#")' function returns the location of the # character in a CASAVA v1.5 header line
+# of the format @FCD22VPACXX:2:1101:1207:2159#CAGATCAG/1; use 'index($0," ") for CASAVA 1.9 format
+# with space separating the index sequence from the rest of the header. The +1 increments that value
+# to the position of the first base of the index (change for CASAVA 1.9), and the substr($,,6) function
+# recovers six bases of the index starting from that beginning position.
+
+# Useful tips on searching for specific text patterns in file with grep or awk and printing either
+# the line containing the text or following line(s) are at 
+# http://stackoverflow.com/questions/13656115/search-for-first-item-in-line-then-print-line-and-following-line
+# to find the pattern 1234 in the first space-delimited field, print that line and the following line, use
+     awk '$1=="1234"{print;getline;print}' <filename>
+
+# To use Boolean logic operators AND, OR, and NOT in awk, use && for AND; use || for OR; use ! for NOT:
+     awk '/regexp1/ && /regexp2/ && /regexp3/ { print; }'  # prints only lines containing all 3 patterns
+     awk '/regexp1/ || /regexp2/ || /regexp3/ { print; }'  # prints lines containing at least 1 of the 3 patterns
+     awk '/regexp1/ && /regexp2/ ! /regexp3/ { print; }'  # prints only lines containing both patterns 1 and 2 and not 3
+	 
+
+# Change the record separator and field separator characters to convert multi-line information groups
+# to a single line. For example, to convert FASTA-format sequence files with multiple lines of sequence,
+# to have all sequence on one line, use a for-loop and the printf command to produce output:
+     awk 'BEGIN {RS = ">"; FS = "\n"} {printf "%s\n", ">"$1} {for(i=2;i<=NF;i+=1) printf "%s", $i} }{printf "%s","\n"}' <infile.fa>
+
+# The printf command provides complete control over the format of printed output, at the cost of complex syntax.
+# See the documentation at https://www.gnu.org/software/gawk/manual/html_node/Printf.html for more information.
+# The "%s" specifies we are printing a 'string', or text; we can specify other types of output as follows:
+# %d or % i - integer digits
+# %e - number in scientific notation, eg 'printf "%4.3e\n", 1950' prints 1.950e+03 with 3 digits to the
+# right of the decimal.
+# %c - a character specified by the ASCII character code, eg 'printf "%c", 65' produces the character 'A'
+# %f - a decimal number or 'float', with significant digits specified: 'printf "%4.3f", 1950' prints '1950.000'	
+# Note that printf does not add a newline, so multiple printf statements will all be output to the same
+# line unless newline characters '\n' are specified as part of the strings to be printed. 
+
+# add FASTA headers with sequence number as name, using awk:
+     awk '{print ">" FNR "\n" $0}' infile.txt >outfile.fa
+
+# add FASTA headers with leading zeros so all sequence header lines are of equal length, count the sequences
+# to determine the number of digits required (e.g. for 100,000 to 999,999 sequences, 6 digits are needed).
+     awk '{printf "%s%06d\n%s\n", ">",FNR,$0 }' infile.txt > outfile.fa
+
+# For FASTA-format sequence files with a single line of sequence per record:
+# To convert into tab-delimited columns with name and sequence on one line, use:
+     awk 'BEGIN {RS = ">"; FS = "\n"; OFS = "\t"}{print ">"$1,$2}'
+
+# For FASTA-format sequence files with multiple lines of sequence per record, to convert
+# into a tab-delimited format with name and sequence on a single line, use:
+     awk 'BEGIN {RS = ">"; FS = "\n"}{printf "%s\t", ">"$1}{for (i = 2; i <= NF; i++) printf "%s",$i}{printf "%s","\n"}' test.fa > test.out
+# This format allows easy determination of the number of bases for each sequence, because the output
+# file can be used as input to awk. For example, to print the name and length of each sequence in the
+# test.out file:
+     awk '{print $1, length($2)} test.out
+
+#  To sum a column of numbers using awk, for field 1 in each line:
+     awk '{s+=$1}END{print s}' <infile>    
+# To change which field is summed, change the $1 to the desired column number
+# To calculate the mean, divide the total 's' by the number of records (the NR variable) and print the
+# result by changing the {print s} statement to {print s, s/NR}
+
+# To right-justify integers in a column of a space-delimited text file, followed by a string in column 2:
+     awk -F" " '{ printf "%6d %s\n", $1, $2 }' infile.txt > outfile.txt
+
+# To merge information from two files, with the option to carry out other operations depending on values:
+	 awk 'FNR==NR{a[$1]=$2;next} ($1 in a) {print $1,a[$1],$2}' file1 file2
+# FNR is the record number within file, and NR is the total number of records (lines, by default) read.
+# As long as FNR==NR, awk is still reading the first input file (file1) - as long as that is true,
+# an array variable a is populated using column 1 as the key and column 2 as the value. The next command
+# tells awk to skip the second part of the one-liner and read another line from file1.
+# When FNR is no longer equal to NR, awk is reading the second file, so it skips the array loading
+# statement and goes to the second statement ($1 in a){print $1,a[$1],$2} - this reads a line from
+# file2, prints column 1 of file2, then finds the value from file1 that is stored in the array element
+# with that value as key (which was column 2 of file1), then prints column 2 of file2. Math operations or
+# other operations can be carried out, conditional on values present in the different variables, before
+# printing.	 
+
+#Remove line breaks in a fasta file. 
+	awk '/^>/ {print s ? s "\n" $0 : $0; s=""; next} {s=s sprintf("%s", $0)} END {if (s) print s}' sequences.fasta > sequences_with_no_line_breaks.fasta
+	
+# To find sequences with matching name
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{if ($1~/name/) print ">"$0}' file.fa
+	
+# To extract sequences using a list
+	awk 'BEGIN{RS=">";FS="\n"}NR==FNR{a[$1]++}NR>FNR{if ($1 in a && $0!="") printf ">%s",$0}' list file.fa
+#The names in the list must start with ">" and each name is separated by a newline ("\n")
+
+#To join multiple lines into single line
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{seq="";for (i=2;i<=NF;i++) seq=seq""$i; print ">"$1"\n"seq}' file.fa
+#Single line sequence is desirable when a sequence is long and spans many lines. Furthermore, single line sequence is much easier to be manipulated using AWK oneliners as showed in the next few examples.
+
+#To print the sequence starting from position 1 until 2213
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{seq="";for (i=2;i<=NF;i++) seq=seq""$i; print ">"$1"\n"substr(seq,1,2213)}' file.fa
+#To print sequence starting from position 399 until 704
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{seq="";for (i=2;i<=NF;i++) seq=seq""$i; print ">"$1"\n"substr(seq,399,704-399+1)}' file.fa
+#To print sequence with matching name from position 399 until 704
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{seq="";for (i=2;i<=NF;i++) seq=seq""$i; if ($1~/name/) print ">"$1"\n"substr(seq,399,704-399+1)}' file.fa
+#To reformat into 100 characters per line
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{seq="";for (i=2;i<=NF;i++) seq=seq""$i;a[$1]=seq;b[$1]=length(seq)}END{for (i in a) {k=sprintf("%d", (b[i]/100)+1); printf ">%s\n",i;for (j=1;j<=int(k);j++) printf "%s\n", substr(a[i],1+(j-1)*100,100)}}' fasta.txt
+#To substitute small letter with capital letter
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{printf ">%s\n",$1;for (i=2;i<=NF;i++) {gsub(/c/,"C",$i);gsub(/a/,"A",$i);gsub(/g/,"G",$i);gsub(/t/,"T",$i); printf "%s\n",$i}}' file.fa
+#To convert DNA to RNA
+	awk 'BEGIN{RS=">";FS="\n"}NR>1{printf ">%s\n",$1;for (i=2;i<=NF;i++) {gsub(/T/,"U",$i); printf "%s\n",$i}}' file.fa
+#Calculate number of each nucleotide, total length and GC content
+	awk 'BEGIN{RS=">";FS="\n";print "name\tA\tC\tG\tT\tN\tlength\tGC%"}NR>1{sumA=0;sumT=0;sumC=0;sumG=0;sumN=0;seq="";for (i=2;i<=NF;i++) seq=seq""$i; k=length(seq); for (i=1;i<=k;i++) {if (substr(seq,i,1)=="T") sumT+=1; else if (substr(seq,i,1)=="A") sumA+=1; else if (substr(seq,i,1)=="G") sumG+=1; else if (substr(seq,i,1)=="C") sumC+=1; else if (substr(seq,i,1)=="N") sumN+=1}; print $1"\t"sumA"\t"sumC"\t"sumG"\t"sumT"\t"sumN"\t"k"\t"(sumC+sumG)/k*100}' file.fa
+#To reverse complement nucleotide sequences. #This will produce a single line sequence
+	awk 'BEGIN{RS=">";FS="\n";a["T"]="A";a["A"]="T";a["C"]="G";a["G"]="C";a["N"]="N"}NR>1{for (i=2;i<=NF;i++) seq=seq""$i;for(i=length(seq);i!=0;i--) {k=substr(seq,i,1);x=x a[k]}; printf ">%s\n%s",$1,x}' file.fa
+#To convert FASTQ to FASTA format
+	awk 'NR%4==1{print ">"substr($0,2)}NR%4==2{print $0}' file.fq
+#print first and second line of every four lines. Replace the first character of the first line with ">".
+# Multiple separators
+	awk -F "\t" '$3 == "gene" { print $9 }' transcriptome.gtf | \
+		awk -F "; " '$3 ~ "protein_coding" {print $5}'	
+#Print each line whose 7th field matches the regular expression:
+	awk ‘$7 ~ /^[a-f]/’ file.txt
+#Print each line whose 7th field does not match the regular expression:
+	awk ‘$7 !~ /^[a-f]/’ file.txt
+#Get unique entries in file.txt based on column 1 (takes only the first instance):
+	awk ‘!arr[$2]++’ file.txt
+#Print rows where column 3 is larger than column 5 in file.txt:
+	awk ‘$3>$5’ file.txt
+#Sum column 1 of file.txt:
+
+	awk ‘{sum+=$1} END {print sum}’ file.txt
+#Compute the mean of column 2:
+	awk ‘{x+=$2}END{print x/NR}’ file.txt
